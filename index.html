@@ -51,9 +51,10 @@
   #recBtn::after{content:""; position:absolute; inset:8px; border-radius:50%; background:#C0392B; transition:border-radius .15s, inset .15s;}
   #recBtn.on::after{inset:18px; border-radius:6px;}
   #stage.scrollOnly #recBtn{display:none;}
-  #stage.scrollOnly #camBtn, #stage.scrollOnly #paneBtn{display:none;}
+  #stage.scrollOnly #camBtn, #stage.scrollOnly #paneBtn, #stage.scrollOnly #fitBtn{display:none;}
   #stage.cameraMode #mirrorBtn{display:none;}
-  #camBtn{font-size:13px;}
+  #camBtn, #fitBtn{font-size:13px;}
+  #bar{flex-wrap:wrap;}
 
   /* zoom slider */
   #zoomBox{position:absolute; left:50%; transform:translateX(-50%); bottom:calc(86px + env(safe-area-inset-bottom));
@@ -100,7 +101,7 @@
     <button class="btn primary" id="goCam">Camera + record</button>
     <button class="btn ghost" id="goScroll">Scroll only</button>
   </div>
-  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam opens the lens list (Back 1, Back 2, Front...), ▤ resizes and lightens the band, and when the active lens can zoom you get preset steps plus a slider (leftmost is the widest view). Tapping the text mid-take pauses the recording and the scroll together; tap again and the same take continues. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
+  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam opens the lens list (Back 1, Back 2, Front...), ▤ resizes and lightens the band, and when the active lens can zoom you get preset steps plus a slider, and every lens opens at its widest. Fit switches the preview between the whole recorded frame and filling the screen; the recording always captures the whole frame. Tapping the text mid-take pauses the recording and the scroll together; tap again and the same take continues. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
 </div>
 
 <div id="stage">
@@ -120,6 +121,7 @@
     <button class="cbtn" id="bigBtn" title="Bigger text">A+</button>
     <button class="cbtn" id="camBtn" title="Next camera">Cam</button>
     <button class="cbtn" id="paneBtn" title="Script box size and shade">▤</button>
+    <button class="cbtn" id="fitBtn" title="Preview fit: whole frame or fill screen">Fit</button>
     <button class="cbtn" id="mirrorBtn" title="Mirror (for beam-splitter rigs)">⇋</button>
   </div>
   <div id="done">
@@ -192,7 +194,7 @@
     scroller.textContent = $("script").value || "Your script is empty. Exit and paste your piece first.";
     stage.classList.toggle("scrollOnly", m==="scroll");
     stage.classList.toggle("cameraMode", m==="camera");
-    applyPane();
+    applyPane(); applyFit();
     stage.style.display="block";
     $("setup").style.display="none";
     restart(); playing=false; lastT=0;
@@ -243,7 +245,8 @@
     chips.innerHTML="";
     if(caps.zoom && caps.zoom.max>caps.zoom.min){
       z.min=caps.zoom.min; z.max=caps.zoom.max; z.step=caps.zoom.step||0.1;
-      z.value=(tr.getSettings && tr.getSettings().zoom) || caps.zoom.min;
+      z.value=caps.zoom.min;
+      tr.applyConstraints({advanced:[{zoom:caps.zoom.min}]}).catch(function(){});
       function markChip(){
         var cur=Math.round((+z.value)*10)/10;
         Array.prototype.forEach.call(chips.children, function(c){ c.classList.toggle("active", +c.dataset.v===cur); });
@@ -275,7 +278,7 @@
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
       alert("This browser will not open the camera here. The page must be served over https (not opened as a plain file)."); return;
     }
-    openCam({ facingMode:"user", width:{ideal:1920}, height:{ideal:1080} }).then(function(){
+    openCam({ facingMode:"user", width:{ideal:1080}, height:{ideal:1920} }).then(function(){
       openStage("camera");
     }).catch(function(err){
       alert("Camera did not open: "+err.message+"\n\nCheck that the browser has camera and microphone permission for this page.");
@@ -302,7 +305,7 @@
     vidIdx=i;
     var id=vids[i].deviceId;
     if(stream) stream.getTracks().forEach(function(t){ t.stop(); });
-    openCam({ deviceId:{exact:id}, width:{ideal:1920}, height:{ideal:1080} }).then(buildLensSheet).catch(function(err){
+    openCam({ deviceId:{exact:id}, width:{ideal:1080}, height:{ideal:1920} }).then(buildLensSheet).catch(function(err){
       alert("That camera did not open: "+err.message);
       openCam({ facingMode:"user" }).then(buildLensSheet).catch(function(){});
     });
@@ -326,6 +329,12 @@
   }
   $("paneBtn").addEventListener("click", function(){
     paneIdx=(paneIdx+1)%panes.length; lsSet("pane",panes[paneIdx]); applyPane();
+  });
+
+  var fitMode=lsGet("fit","contain");
+  function applyFit(){ cam.style.objectFit=fitMode; }
+  $("fitBtn").addEventListener("click", function(){
+    fitMode = fitMode==="contain" ? "cover" : "contain"; lsSet("fit",fitMode); applyFit();
   });
 
   $("exitBtn").addEventListener("click", closeStage);
