@@ -74,11 +74,10 @@
   #zoomChips button{appearance:none; border:none; border-radius:999px; padding:6px 11px; font:600 12px Georgia,serif;
                     background:rgba(255,255,255,.12); color:#F7EFDD; cursor:pointer;}
   #zoomChips button.active{background:#C0392B; color:#fff;}
-  #lensSheet{position:absolute; left:50%; transform:translateX(-50%); bottom:calc(150px + env(safe-area-inset-bottom));
-             display:none; flex-direction:column; gap:8px; background:rgba(20,16,11,.88); border-radius:14px; padding:10px;
-             max-height:48vh; max-width:92vw; overflow-y:auto;}
-  #lensSheet button{appearance:none; border:none; border-radius:10px; padding:9px 16px; font:600 14px Georgia,serif;
-                    background:rgba(255,255,255,.08); color:#F7EFDD; cursor:pointer; min-width:160px; max-width:80vw;
+  #lensSheet{position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:flex-start;
+             gap:8px; background:rgba(8,6,4,.85); padding:7vh 20px 20px; overflow-y:auto; z-index:5;}
+  #lensSheet button{appearance:none; border:none; border-radius:10px; padding:10px 16px; font:600 14px Georgia,serif;
+                    background:rgba(255,255,255,.1); color:#F7EFDD; cursor:pointer; width:min(80vw,300px);
                     white-space:normal; flex:none;}
   #lensSheet button.active{background:#C0392B; color:#fff;}
   #stage.scrollOnly #zoomBox, #stage.scrollOnly #lensSheet{display:none !important;}
@@ -105,7 +104,7 @@
   <h1>Teleprompter</h1>
   <p class="hint">Paste your piece below. Camera mode scrolls it over the front camera and records; scroll mode is text only, for the laptop propped behind a phone. Everything stays on this device.</p>
   <textarea id="script" placeholder="Paste your piece here."></textarea>
-  <div class="row"><label for="speed">Speed</label><input type="range" id="speed" min="12" max="160" step="2" value="55"><span class="val" id="speedVal"></span></div>
+  <div class="row"><label for="speed">Speed</label><input type="range" id="speed" min="4" max="160" step="2" value="55"><span class="val" id="speedVal"></span></div>
   <div class="row"><label for="fsize">Text size</label><input type="range" id="fsize" min="20" max="72" step="2" value="34"><span class="val" id="fsizeVal"></span></div>
   <div class="btns">
     <button class="btn primary" id="goCam">Camera + record</button>
@@ -173,7 +172,7 @@
   $("speed").addEventListener("input", function(){ speed=+this.value; lsSet("speed",speed); showVals(); });
   $("fsize").addEventListener("input", function(){ fsize=+this.value; lsSet("fsize",fsize); showVals(); });
 
-  function setSpeed(d){ speed=Math.min(160,Math.max(12,speed+d)); $("speed").value=speed; lsSet("speed",speed); showVals(); }
+  function setSpeed(d){ speed=Math.min(160,Math.max(4,speed+d)); $("speed").value=speed; lsSet("speed",speed); showVals(); }
   function setSize(d){ fsize=Math.min(72,Math.max(20,fsize+d)); $("fsize").value=fsize; lsSet("fsize",fsize); showVals(); layoutPad(); }
 
   /* ---------- scroll engine ---------- */
@@ -320,7 +319,13 @@
       b.addEventListener("click", function(){ sheet.style.display="none"; switchTo(i); });
       sheet.appendChild(b);
     });
+    var c=document.createElement("button");
+    c.textContent="Close";
+    c.style.background="rgba(192,57,43,.85)";
+    c.addEventListener("click", function(){ sheet.style.display="none"; });
+    sheet.appendChild(c);
   }
+  $("lensSheet").addEventListener("click", function(e){ if(e.target===this) this.style.display="none"; });
   function switchTo(i){
     if(rec && rec.state!=="inactive") return;
     if(!vids[i]) return;
