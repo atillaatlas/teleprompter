@@ -53,7 +53,8 @@
   #stage.scrollOnly #recBtn{display:none;}
   #stage.scrollOnly #camBtn, #stage.scrollOnly #paneBtn, #stage.scrollOnly #fitBtn{display:none;}
   #stage.cameraMode #mirrorBtn{display:none;}
-  #camBtn, #fitBtn, #flipBtn, #hideBtn{font-size:13px;}
+  #camBtn, #fitBtn, #flipBtn, #hideBtn, #fxBtn{font-size:13px;}
+  #stage.scrollOnly #fxBtn{display:none !important;}
   #showBtn{position:absolute; right:12px; bottom:calc(12px + env(safe-area-inset-bottom)); width:40px; height:40px;
            border-radius:50%; border:none; background:rgba(30,25,18,.45); color:rgba(247,239,221,.85);
            font-size:18px; display:none; cursor:pointer;}
@@ -110,7 +111,7 @@
     <button class="btn primary" id="goCam">Camera + record</button>
     <button class="btn ghost" id="goScroll">Scroll only</button>
   </div>
-  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam opens the lens list (Back 1, Back 2, Front...), ▤ resizes and lightens the band, and when the active lens can zoom you get preset steps plus a slider, and every lens opens at its widest. Fit switches the preview between the whole recorded frame and filling the screen; the recording always captures the whole frame. 180 turns the text and buttons upside down for flipped propping while your face stays upright. Hide tucks every control away for a clean view; the faint dot in the bottom corner brings them back. Tapping the text mid-take pauses the recording and the scroll together; tap again and the same take continues. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
+  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam opens the lens list (Back 1, Back 2, Front...), ▤ resizes and lightens the band, and when the active lens can zoom you get preset steps plus a slider, and every lens opens at its widest. Fit switches the preview between the whole recorded frame and filling the screen; the recording always captures the whole frame. 180 turns the text and buttons upside down for flipped propping while your face stays upright. Hide tucks every control away for a clean view; the faint dot in the bottom corner brings them back. Fx cycles color looks (Warm, Soft, Film, B&W) that are baked into the recording; pick before you record. Tapping the text mid-take pauses the recording and the scroll together; tap again and the same take continues. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
 </div>
 
 <div id="stage">
@@ -134,6 +135,7 @@
     <button class="cbtn" id="fitBtn" title="Preview fit: whole frame or fill screen">Fit</button>
     <button class="cbtn" id="flipBtn" title="Rotate everything 180 for upside-down propping">180</button>
     <button class="cbtn" id="hideBtn" title="Hide all controls">Hide</button>
+    <button class="cbtn" id="fxBtn" title="Color look, baked into the recording">Fx</button>
     <button class="cbtn" id="mirrorBtn" title="Mirror (for beam-splitter rigs)">⇋</button>
   </div>
   <div id="done">
@@ -207,7 +209,7 @@
     stage.classList.toggle("scrollOnly", m==="scroll");
     stage.classList.toggle("cameraMode", m==="camera");
     stage.classList.remove("hideCtl");
-    applyPane(); applyFit();
+    applyPane(); applyFit(); applyFx();
     stage.style.display="block";
     $("setup").style.display="none";
     restart(); playing=false; lastT=0;
@@ -224,6 +226,7 @@
     playing=false;
     if(rec && rec.state!=="inactive") rec.stop();
     stopClock();
+    stopFiltered();
     if(stream){ stream.getTracks().forEach(function(tr){ tr.stop(); }); stream=null; }
     cam.srcObject=null;
     if(wakeLock){ wakeLock.release().catch(function(){}); wakeLock=null; }
@@ -358,6 +361,40 @@
     paneIdx=(paneIdx+1)%panes.length; lsSet("pane",panes[paneIdx]); applyPane();
   });
 
+  var FILTERS=[
+    {name:"Fx", css:"none"},
+    {name:"Warm", css:"brightness(1.06) contrast(1.03) saturate(1.16) sepia(0.14)"},
+    {name:"Soft", css:"brightness(1.08) contrast(0.92) saturate(1.06)"},
+    {name:"Film", css:"contrast(1.09) saturate(0.85) sepia(0.22) brightness(1.03)"},
+    {name:"B&W", css:"grayscale(1) contrast(1.06)"}
+  ];
+  var fIdx=(+lsGet("fx",0) || 0) % FILTERS.length;
+  function applyFx(){
+    cam.style.filter=FILTERS[fIdx].css;
+    $("fxBtn").textContent=FILTERS[fIdx].name;
+  }
+  $("fxBtn").addEventListener("click", function(){
+    if(rec && rec.state!=="inactive") return;
+    fIdx=(fIdx+1)%FILTERS.length; lsSet("fx",fIdx); applyFx();
+  });
+  var fxCanvas=null, fxDraw=null;
+  function makeFilteredStream(){
+    var tr=stream.getVideoTracks()[0];
+    var st=tr.getSettings ? tr.getSettings() : {};
+    fxCanvas=document.createElement("canvas");
+    fxCanvas.width=st.width||1280; fxCanvas.height=st.height||720;
+    var ctx=fxCanvas.getContext("2d");
+    (function draw(){
+      ctx.filter=FILTERS[fIdx].css;
+      ctx.drawImage(cam, 0, 0, fxCanvas.width, fxCanvas.height);
+      fxDraw=requestAnimationFrame(draw);
+    })();
+    var mixed=new MediaStream(fxCanvas.captureStream(30).getVideoTracks());
+    stream.getAudioTracks().forEach(function(t){ mixed.addTrack(t); });
+    return mixed;
+  }
+  function stopFiltered(){ if(fxDraw){ cancelAnimationFrame(fxDraw); fxDraw=null; } fxCanvas=null; }
+
   var fitMode=lsGet("fit","contain");
   function applyFit(){ cam.style.objectFit=fitMode; }
   $("fitBtn").addEventListener("click", function(){
@@ -423,7 +460,8 @@
       chunks=[];
       var opts = mime ? {mimeType:mime} : {};
       opts.videoBitsPerSecond = 8000000; opts.audioBitsPerSecond = 128000;
-      try{ rec = new MediaRecorder(stream, opts); }
+      var recStream = FILTERS[fIdx].css==="none" ? stream : makeFilteredStream();
+      try{ rec = new MediaRecorder(recStream, opts); }
       catch(e){ alert("Recording could not start: "+e.message); return; }
       rec.ondataavailable=function(ev){ if(ev.data && ev.data.size) chunks.push(ev.data); };
       rec.onstop=finishRecording;
@@ -437,6 +475,7 @@
   function finishRecording(){
     $("recBtn").classList.remove("on");
     stopClock();
+    stopFiltered();
     var blob=new Blob(chunks,{type: recExt==="mp4"?"video/mp4":"video/webm"});
     var url=URL.createObjectURL(blob);
     var d=new Date();
