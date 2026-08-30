@@ -31,13 +31,13 @@
   #stage{position:fixed; inset:0; background:#000; display:none; touch-action:none; overflow:hidden;}
   #cam{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); background:#000;}
   #lift{position:absolute; inset:0; mix-blend-mode:lighten; pointer-events:none; display:none;}
-  #scriptPane{position:absolute; left:0; right:0; top:0; height:30%; overflow:hidden;
+  #scriptPane{position:absolute; left:0; right:0; top:0; height:36%; overflow:hidden;
               background:rgba(10,8,5,.62); -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px);}
-  #stage.paneTall #scriptPane{height:46%;}
-  #stage.paneGlass #scriptPane{height:34%; background:rgba(10,8,5,.26); -webkit-backdrop-filter:none; backdrop-filter:none;}
+  #stage.paneTall #scriptPane{height:62%;}
+  #stage.paneGlass #scriptPane{height:42%; background:rgba(10,8,5,.26); -webkit-backdrop-filter:none; backdrop-filter:none;}
   #stage.scrollOnly #scriptPane{height:100%; background:#0E0B08;}
   #stage.mirror #scriptPane{transform:scaleX(-1);}
-  #scroller{padding:0 6vw; color:#F7EFDD; line-height:1.55; white-space:pre-wrap; will-change:transform;
+  #scroller{padding:0 4vw; color:#F7EFDD; line-height:1.55; white-space:pre-wrap; will-change:transform;
             font-family:Georgia,serif; text-shadow:0 1px 4px rgba(0,0,0,.85);}
   #readLine{position:absolute; left:0; right:0; top:26%; height:0; border-top:1px solid rgba(247,239,221,.25); pointer-events:none;}
 
@@ -186,9 +186,12 @@
     scroller.style.paddingBottom = pane.clientHeight+"px";
   }
   function apply(){ scroller.style.transform = "translateY("+(-y)+"px)"; }
+  var rampT0=0;
   function tick(t){
     if(playing){
-      if(lastT) y += speed*(t-lastT)/1000;
+      var mult=1;
+      if(rampT0){ var el=(t-rampT0)/1000; mult = el>=12 ? 1 : 0.7+0.3*(el/12); }
+      if(lastT) y += speed*mult*(t-lastT)/1000;
       var max = scroller.scrollHeight - pane.clientHeight*0.26;
       if(y>=max){ y=max; playing=false; }
       apply();
@@ -200,6 +203,7 @@
 
   pane.addEventListener("click", function(){
     playing=!playing;
+    if(playing && y<1) rampT0=performance.now();
     if(rec && rec.state==="recording" && !playing){ rec.pause(); pausedAt=Date.now(); }
     else if(rec && rec.state==="paused" && playing){ recStart += Date.now()-pausedAt; rec.resume(); }
   });
@@ -489,7 +493,8 @@
       rec.start(1000);
       $("recBtn").classList.add("on");
       startClock();
-      restart(); playing=true;
+      restart(); playing=false;
+      setTimeout(function(){ rampT0=performance.now(); playing=true; }, 1000);
     },1000);
   });
 
