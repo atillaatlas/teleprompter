@@ -384,31 +384,37 @@
     if(rec && rec.state!=="inactive") return;
     fIdx=(fIdx+1)%FILTERS.length; lsSet("fx",fIdx); applyFx();
   });
-  var fxCanvas=null, fxDraw=null;
+  var fxCanvas=null, fxOn=false;
   function makeFilteredStream(){
     var tr=stream.getVideoTracks()[0];
     var st=tr.getSettings ? tr.getSettings() : {};
+    var w=st.width||1280, h=st.height||720;
+    if(w>1280){ h=Math.round(h*1280/w); w=1280; }
     fxCanvas=document.createElement("canvas");
-    fxCanvas.width=st.width||1280; fxCanvas.height=st.height||720;
+    fxCanvas.width=w; fxCanvas.height=h;
     var ctx=fxCanvas.getContext("2d");
-    (function draw(){
+    fxOn=true;
+    function draw(){
+      if(!fxOn) return;
       var f=FILTERS[fIdx];
       ctx.filter=f.css;
-      ctx.drawImage(cam, 0, 0, fxCanvas.width, fxCanvas.height);
+      ctx.drawImage(cam, 0, 0, w, h);
       if(f.lift){
         ctx.filter="none";
         ctx.globalCompositeOperation="lighten";
         ctx.fillStyle=f.lift;
-        ctx.fillRect(0, 0, fxCanvas.width, fxCanvas.height);
+        ctx.fillRect(0, 0, w, h);
         ctx.globalCompositeOperation="source-over";
       }
-      fxDraw=requestAnimationFrame(draw);
-    })();
+      if(cam.requestVideoFrameCallback) cam.requestVideoFrameCallback(draw);
+      else requestAnimationFrame(draw);
+    }
+    draw();
     var mixed=new MediaStream(fxCanvas.captureStream(30).getVideoTracks());
     stream.getAudioTracks().forEach(function(t){ mixed.addTrack(t); });
     return mixed;
   }
-  function stopFiltered(){ if(fxDraw){ cancelAnimationFrame(fxDraw); fxDraw=null; } fxCanvas=null; }
+  function stopFiltered(){ fxOn=false; fxCanvas=null; }
 
   var fitMode=lsGet("fit","contain");
   function applyFit(){ cam.style.objectFit=fitMode; }
@@ -474,7 +480,7 @@
       recExt = mime.indexOf("mp4")>-1 ? "mp4" : "webm";
       chunks=[];
       var opts = mime ? {mimeType:mime} : {};
-      opts.videoBitsPerSecond = 8000000; opts.audioBitsPerSecond = 128000;
+      opts.videoBitsPerSecond = 4000000; opts.audioBitsPerSecond = 128000;
       var recStream = FILTERS[fIdx].css==="none" ? stream : makeFilteredStream();
       try{ rec = new MediaRecorder(recStream, opts); }
       catch(e){ alert("Recording could not start: "+e.message); return; }
