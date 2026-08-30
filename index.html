@@ -56,6 +56,8 @@
   #camBtn, #fitBtn, #flipBtn{font-size:13px;}
   #bar{flex-wrap:wrap;}
   #stage.flip180{transform:rotate(180deg);}
+  #stage.hideCtl #bar, #stage.hideCtl #zoomBox, #stage.hideCtl #lensSheet{display:none !important;}
+  #lensSheet button small{display:block; font-size:10px; opacity:.6; font-weight:400;}
 
   /* zoom slider */
   #zoomBox{position:absolute; left:50%; transform:translateX(-50%); bottom:calc(86px + env(safe-area-inset-bottom));
@@ -102,7 +104,7 @@
     <button class="btn primary" id="goCam">Camera + record</button>
     <button class="btn ghost" id="goScroll">Scroll only</button>
   </div>
-  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam opens the lens list (Back 1, Back 2, Front...), ▤ resizes and lightens the band, and when the active lens can zoom you get preset steps plus a slider, and every lens opens at its widest. Fit switches the preview between the whole recorded frame and filling the screen; the recording always captures the whole frame. 180 turns the entire screen upside down for flipped propping. Tapping the text mid-take pauses the recording and the scroll together; tap again and the same take continues. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
+  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam opens the lens list (Back 1, Back 2, Front...), ▤ resizes and lightens the band, and when the active lens can zoom you get preset steps plus a slider, and every lens opens at its widest. Fit switches the preview between the whole recorded frame and filling the screen; the recording always captures the whole frame. 180 turns the text and buttons upside down for flipped propping while your face stays upright. Tapping your face area hides the buttons and sliders for a clean view; tap again to bring them back. Tapping the text mid-take pauses the recording and the scroll together; tap again and the same take continues. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
 </div>
 
 <div id="stage">
@@ -196,6 +198,7 @@
     scroller.textContent = $("script").value || "Your script is empty. Exit and paste your piece first.";
     stage.classList.toggle("scrollOnly", m==="scroll");
     stage.classList.toggle("cameraMode", m==="camera");
+    stage.classList.remove("hideCtl");
     applyPane(); applyFit();
     stage.style.display="block";
     $("setup").style.display="none";
@@ -234,11 +237,18 @@
       for(var i=0;i<vids.length;i++){ if(vids[i].deviceId===id){ vidIdx=i; break; } }
     }).catch(function(){});
   }
+  var flipped=false, isFront=true;
+  function camTransform(){
+    var t=[];
+    if(flipped) t.push("rotate(180deg)");
+    if(isFront) t.push("scaleX(-1)");
+    cam.style.transform = t.length ? t.join(" ") : "none";
+  }
   function applyMirror(){
     var tr=stream && stream.getVideoTracks()[0]; if(!tr) return;
     var st=tr.getSettings ? tr.getSettings() : {};
-    var front = st.facingMode ? st.facingMode==="user" : /front|user/i.test(tr.label||"");
-    cam.style.transform = front ? "scaleX(-1)" : "none";
+    isFront = st.facingMode ? st.facingMode==="user" : /front|user/i.test(tr.label||"");
+    camTransform();
   }
   function setupZoom(){
     var box=$("zoomBox"), z=$("zoom"), chips=$("zoomChips");
@@ -296,6 +306,7 @@
       else { otherN++; name="Lens "+otherN; }
       var b=document.createElement("button");
       b.textContent=name;
+      if(d.label){ var s=document.createElement("small"); s.textContent=d.label.slice(0,36); b.appendChild(s); }
       if(i===vidIdx) b.className="active";
       b.addEventListener("click", function(){ sheet.style.display="none"; switchTo(i); });
       sheet.appendChild(b);
@@ -338,7 +349,15 @@
   $("fitBtn").addEventListener("click", function(){
     fitMode = fitMode==="contain" ? "cover" : "contain"; lsSet("fit",fitMode); applyFit();
   });
-  $("flipBtn").addEventListener("click", function(){ stage.classList.toggle("flip180"); });
+  $("flipBtn").addEventListener("click", function(){
+    flipped=!flipped;
+    stage.classList.toggle("flip180", flipped);
+    camTransform();
+  });
+  cam.addEventListener("click", function(){
+    if(stage.classList.contains("scrollOnly")) return;
+    stage.classList.toggle("hideCtl");
+  });
 
   $("exitBtn").addEventListener("click", closeStage);
   $("restartBtn").addEventListener("click", function(){ restart(); });
