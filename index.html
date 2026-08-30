@@ -55,6 +55,13 @@
   #stage.cameraMode #mirrorBtn{display:none;}
   #camBtn{font-size:13px;}
 
+  /* zoom slider */
+  #zoomBox{position:absolute; left:50%; transform:translateX(-50%); bottom:calc(86px + env(safe-area-inset-bottom));
+           display:none; align-items:center; gap:10px; background:rgba(30,25,18,.72); border-radius:999px;
+           padding:8px 16px; color:#F7EFDD; font:600 13px Georgia,serif;}
+  #zoomBox input{width:min(46vw,240px); accent-color:#C0392B;}
+  #stage.scrollOnly #zoomBox{display:none !important;}
+
   /* record clock */
   #clock{position:absolute; top:calc(10px + env(safe-area-inset-top)); right:14px; color:#fff; font:600 15px Georgia,serif;
          background:rgba(0,0,0,.5); border-radius:999px; padding:6px 12px; display:none; align-items:center; gap:8px;}
@@ -83,13 +90,14 @@
     <button class="btn primary" id="goCam">Camera + record</button>
     <button class="btn ghost" id="goScroll">Scroll only</button>
   </div>
-  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam cycles through the phone's lenses, ▤ resizes and lightens the band. Tap the text while prompting to pause and resume. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
+  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam cycles through the phone's lenses, ▤ resizes and lightens the band, and a Zoom slider appears when the active lens supports it (slide left for the widest view). Tapping the text mid-take pauses the recording and the scroll together; tap again and the same take continues. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
 </div>
 
 <div id="stage">
   <video id="cam" autoplay muted playsinline></video>
   <div id="scriptPane"><div id="scroller"></div><div id="readLine"></div></div>
   <div id="clock"><span class="dot"></span><span id="clockTxt">0:00</span></div>
+  <div id="zoomBox"><span>Zoom</span><input type="range" id="zoom"></div>
   <div id="count"></div>
   <div id="bar">
     <button class="cbtn" id="exitBtn" title="Exit">✕</button>
@@ -118,7 +126,7 @@
   var $ = function(id){ return document.getElementById(id); };
   var stage=$("stage"), pane=$("scriptPane"), scroller=$("scroller"), cam=$("cam");
   var mode="scroll", playing=false, y=0, lastT=0, rafId=null;
-  var stream=null, rec=null, chunks=[], recExt="webm", clockId=null, recStart=0, wakeLock=null;
+  var stream=null, rec=null, chunks=[], recExt="webm", clockId=null, recStart=0, pausedAt=0, wakeLock=null;
 
   /* ---------- settings ---------- */
   function lsGet(k,d){ try{ var v=localStorage.getItem("tp_"+k); return v===null?d:v; }catch(e){ return d; } }
@@ -161,7 +169,11 @@
   }
   function restart(){ y=0; apply(); }
 
-  pane.addEventListener("click", function(){ playing=!playing; });
+  pane.addEventListener("click", function(){
+    playing=!playing;
+    if(rec && rec.state==="recording" && !playing){ rec.pause(); pausedAt=Date.now(); }
+    else if(rec && rec.state==="paused" && playing){ recStart += Date.now()-pausedAt; rec.resume(); }
+  });
 
   /* ---------- stage open / close ---------- */
   function openStage(m){
@@ -211,9 +223,22 @@
     var front = st.facingMode ? st.facingMode==="user" : /front|user/i.test(tr.label||"");
     cam.style.transform = front ? "scaleX(-1)" : "none";
   }
+  function setupZoom(){
+    var box=$("zoomBox"), z=$("zoom");
+    var tr=stream && stream.getVideoTracks()[0];
+    var caps=tr && tr.getCapabilities ? tr.getCapabilities() : {};
+    if(caps.zoom && caps.zoom.max>caps.zoom.min){
+      z.min=caps.zoom.min; z.max=caps.zoom.max; z.step=caps.zoom.step||0.1;
+      z.value=(tr.getSettings && tr.getSettings().zoom) || caps.zoom.min;
+      z.oninput=function(){ tr.applyConstraints({advanced:[{zoom:+z.value}]}).catch(function(){}); };
+      box.style.display="flex";
+    } else {
+      box.style.display="none";
+    }
+  }
   function openCam(videoConstraints){
     return navigator.mediaDevices.getUserMedia({ video:videoConstraints, audio:true }).then(function(s){
-      stream=s; cam.srcObject=s; applyMirror(); return refreshVids();
+      stream=s; cam.srcObject=s; applyMirror(); setupZoom(); return refreshVids();
     });
   }
   $("goCam").addEventListener("click", function(){
@@ -284,7 +309,7 @@
   function stopClock(){ if(clockId){ clearInterval(clockId); clockId=null; } $("clock").style.display="none"; }
 
   $("recBtn").addEventListener("click", function(){
-    if(rec && rec.state==="recording"){ playing=false; rec.stop(); return; }
+    if(rec && rec.state!=="inactive"){ playing=false; rec.stop(); return; }
     if(!window.MediaRecorder){ alert("This browser cannot record video. Update it, or use the scroll-only mode with a separate camera app."); return; }
     var n=3, cd=$("count");
     cd.textContent=n; cd.style.display="flex";
@@ -295,7 +320,9 @@
       var mime=pickMime();
       recExt = mime.indexOf("mp4")>-1 ? "mp4" : "webm";
       chunks=[];
-      try{ rec = mime ? new MediaRecorder(stream,{mimeType:mime}) : new MediaRecorder(stream); }
+      var opts = mime ? {mimeType:mime} : {};
+      opts.videoBitsPerSecond = 8000000; opts.audioBitsPerSecond = 128000;
+      try{ rec = new MediaRecorder(stream, opts); }
       catch(e){ alert("Recording could not start: "+e.message); return; }
       rec.ondataavailable=function(ev){ if(ev.data && ev.data.size) chunks.push(ev.data); };
       rec.onstop=finishRecording;
