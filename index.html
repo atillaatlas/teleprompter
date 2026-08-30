@@ -53,8 +53,9 @@
   #stage.scrollOnly #recBtn{display:none;}
   #stage.scrollOnly #camBtn, #stage.scrollOnly #paneBtn, #stage.scrollOnly #fitBtn{display:none;}
   #stage.cameraMode #mirrorBtn{display:none;}
-  #camBtn, #fitBtn{font-size:13px;}
+  #camBtn, #fitBtn, #flipBtn{font-size:13px;}
   #bar{flex-wrap:wrap;}
+  #stage.flip180{transform:rotate(180deg);}
 
   /* zoom slider */
   #zoomBox{position:absolute; left:50%; transform:translateX(-50%); bottom:calc(86px + env(safe-area-inset-bottom));
@@ -101,7 +102,7 @@
     <button class="btn primary" id="goCam">Camera + record</button>
     <button class="btn ghost" id="goScroll">Scroll only</button>
   </div>
-  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam opens the lens list (Back 1, Back 2, Front...), ▤ resizes and lightens the band, and when the active lens can zoom you get preset steps plus a slider, and every lens opens at its widest. Fit switches the preview between the whole recorded frame and filling the screen; the recording always captures the whole frame. Tapping the text mid-take pauses the recording and the scroll together; tap again and the same take continues. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
+  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam opens the lens list (Back 1, Back 2, Front...), ▤ resizes and lightens the band, and when the active lens can zoom you get preset steps plus a slider, and every lens opens at its widest. Fit switches the preview between the whole recorded frame and filling the screen; the recording always captures the whole frame. 180 turns the entire screen upside down for flipped propping. Tapping the text mid-take pauses the recording and the scroll together; tap again and the same take continues. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
 </div>
 
 <div id="stage">
@@ -122,6 +123,7 @@
     <button class="cbtn" id="camBtn" title="Next camera">Cam</button>
     <button class="cbtn" id="paneBtn" title="Script box size and shade">▤</button>
     <button class="cbtn" id="fitBtn" title="Preview fit: whole frame or fill screen">Fit</button>
+    <button class="cbtn" id="flipBtn" title="Rotate everything 180 for upside-down propping">180</button>
     <button class="cbtn" id="mirrorBtn" title="Mirror (for beam-splitter rigs)">⇋</button>
   </div>
   <div id="done">
@@ -278,7 +280,7 @@
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
       alert("This browser will not open the camera here. The page must be served over https (not opened as a plain file)."); return;
     }
-    openCam({ facingMode:"user", width:{ideal:1080}, height:{ideal:1920} }).then(function(){
+    openCam({ facingMode:"user", width:{ideal:1920}, height:{ideal:1440} }).then(function(){
       openStage("camera");
     }).catch(function(err){
       alert("Camera did not open: "+err.message+"\n\nCheck that the browser has camera and microphone permission for this page.");
@@ -305,7 +307,7 @@
     vidIdx=i;
     var id=vids[i].deviceId;
     if(stream) stream.getTracks().forEach(function(t){ t.stop(); });
-    openCam({ deviceId:{exact:id}, width:{ideal:1080}, height:{ideal:1920} }).then(buildLensSheet).catch(function(err){
+    openCam({ deviceId:{exact:id}, width:{ideal:1920}, height:{ideal:1440} }).then(buildLensSheet).catch(function(err){
       alert("That camera did not open: "+err.message);
       openCam({ facingMode:"user" }).then(buildLensSheet).catch(function(){});
     });
@@ -336,6 +338,7 @@
   $("fitBtn").addEventListener("click", function(){
     fitMode = fitMode==="contain" ? "cover" : "contain"; lsSet("fit",fitMode); applyFit();
   });
+  $("flipBtn").addEventListener("click", function(){ stage.classList.toggle("flip180"); });
 
   $("exitBtn").addEventListener("click", closeStage);
   $("restartBtn").addEventListener("click", function(){ restart(); });
