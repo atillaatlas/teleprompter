@@ -30,12 +30,14 @@
   /* ---------- stage ---------- */
   #stage{position:fixed; inset:0; background:#000; display:none; touch-action:none; overflow:hidden;}
   #cam{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); background:#000;}
-  #scriptPane{position:absolute; left:0; right:0; top:0; height:50%; overflow:hidden;
-              background:rgba(10,8,5,.74); -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px);}
+  #scriptPane{position:absolute; left:0; right:0; top:0; height:30%; overflow:hidden;
+              background:rgba(10,8,5,.62); -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px);}
+  #stage.paneTall #scriptPane{height:46%;}
+  #stage.paneGlass #scriptPane{height:34%; background:rgba(10,8,5,.26); -webkit-backdrop-filter:none; backdrop-filter:none;}
   #stage.scrollOnly #scriptPane{height:100%; background:#0E0B08;}
   #stage.mirror #scriptPane{transform:scaleX(-1);}
   #scroller{padding:0 6vw; color:#F7EFDD; line-height:1.55; white-space:pre-wrap; will-change:transform;
-            font-family:Georgia,serif;}
+            font-family:Georgia,serif; text-shadow:0 1px 4px rgba(0,0,0,.85);}
   #readLine{position:absolute; left:0; right:0; top:26%; height:0; border-top:1px solid rgba(247,239,221,.25); pointer-events:none;}
 
   /* controls bar */
@@ -49,6 +51,9 @@
   #recBtn::after{content:""; position:absolute; inset:8px; border-radius:50%; background:#C0392B; transition:border-radius .15s, inset .15s;}
   #recBtn.on::after{inset:18px; border-radius:6px;}
   #stage.scrollOnly #recBtn{display:none;}
+  #stage.scrollOnly #camBtn, #stage.scrollOnly #paneBtn{display:none;}
+  #stage.cameraMode #mirrorBtn{display:none;}
+  #camBtn{font-size:13px;}
 
   /* record clock */
   #clock{position:absolute; top:calc(10px + env(safe-area-inset-top)); right:14px; color:#fff; font:600 15px Georgia,serif;
@@ -78,7 +83,7 @@
     <button class="btn primary" id="goCam">Camera + record</button>
     <button class="btn ghost" id="goScroll">Scroll only</button>
   </div>
-  <p id="camNote">Camera mode needs this page served over https (it will say so if the browser refuses). Tap the text while prompting to pause and resume. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
+  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam cycles through the phone's lenses, ▤ resizes and lightens the band. Tap the text while prompting to pause and resume. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
 </div>
 
 <div id="stage">
@@ -94,6 +99,8 @@
     <button class="cbtn" id="fastBtn" title="Faster">+</button>
     <button class="cbtn" id="smallBtn" title="Smaller text">A−</button>
     <button class="cbtn" id="bigBtn" title="Bigger text">A+</button>
+    <button class="cbtn" id="camBtn" title="Next camera">Cam</button>
+    <button class="cbtn" id="paneBtn" title="Script box size and shade">▤</button>
     <button class="cbtn" id="mirrorBtn" title="Mirror (for beam-splitter rigs)">⇋</button>
   </div>
   <div id="done">
@@ -161,6 +168,8 @@
     mode=m;
     scroller.textContent = $("script").value || "Your script is empty. Exit and paste your piece first.";
     stage.classList.toggle("scrollOnly", m==="scroll");
+    stage.classList.toggle("cameraMode", m==="camera");
+    applyPane();
     stage.style.display="block";
     $("setup").style.display="none";
     restart(); playing=false; lastT=0;
@@ -187,19 +196,57 @@
   }
 
   $("goScroll").addEventListener("click", function(){ openStage("scroll"); });
+  var vids=[], vidIdx=0;
+  function refreshVids(){
+    return navigator.mediaDevices.enumerateDevices().then(function(ds){
+      vids=ds.filter(function(d){ return d.kind==="videoinput"; });
+      var tr=stream && stream.getVideoTracks()[0];
+      var id=tr && tr.getSettings ? tr.getSettings().deviceId : null;
+      for(var i=0;i<vids.length;i++){ if(vids[i].deviceId===id){ vidIdx=i; break; } }
+    }).catch(function(){});
+  }
+  function applyMirror(){
+    var tr=stream && stream.getVideoTracks()[0]; if(!tr) return;
+    var st=tr.getSettings ? tr.getSettings() : {};
+    var front = st.facingMode ? st.facingMode==="user" : /front|user/i.test(tr.label||"");
+    cam.style.transform = front ? "scaleX(-1)" : "none";
+  }
+  function openCam(videoConstraints){
+    return navigator.mediaDevices.getUserMedia({ video:videoConstraints, audio:true }).then(function(s){
+      stream=s; cam.srcObject=s; applyMirror(); return refreshVids();
+    });
+  }
   $("goCam").addEventListener("click", function(){
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
       alert("This browser will not open the camera here. The page must be served over https (not opened as a plain file)."); return;
     }
-    navigator.mediaDevices.getUserMedia({
-      video:{ facingMode:"user", width:{ideal:1920}, height:{ideal:1080} },
-      audio:true
-    }).then(function(s){
-      stream=s; cam.srcObject=s;
+    openCam({ facingMode:"user", width:{ideal:1920}, height:{ideal:1080} }).then(function(){
       openStage("camera");
     }).catch(function(err){
       alert("Camera did not open: "+err.message+"\n\nCheck that the browser has camera and microphone permission for this page.");
     });
+  });
+  $("camBtn").addEventListener("click", function(){
+    if(rec && rec.state==="recording") return;
+    if(vids.length<2){ refreshVids(); return; }
+    vidIdx=(vidIdx+1)%vids.length;
+    var id=vids[vidIdx].deviceId;
+    if(stream) stream.getTracks().forEach(function(t){ t.stop(); });
+    openCam({ deviceId:{exact:id}, width:{ideal:1920}, height:{ideal:1080} }).catch(function(err){
+      alert("That camera did not open: "+err.message);
+      openCam({ facingMode:"user" }).catch(function(){});
+    });
+  });
+
+  var panes=["paneShort","paneTall","paneGlass"];
+  var paneIdx=Math.max(0, panes.indexOf(lsGet("pane","paneShort")));
+  function applyPane(){
+    stage.classList.remove("paneShort","paneTall","paneGlass");
+    stage.classList.add(panes[paneIdx]);
+    layoutPad();
+  }
+  $("paneBtn").addEventListener("click", function(){
+    paneIdx=(paneIdx+1)%panes.length; lsSet("pane",panes[paneIdx]); applyPane();
   });
 
   $("exitBtn").addEventListener("click", closeStage);
