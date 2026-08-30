@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Teleprompter</title>
+<style>
+  :root{ --cream:#F6F1E7; --ink:#1C1813; --accent:#8C3B2E; --soft:#E9E0CF; --paper:#FFFDF8; }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{background:var(--cream); color:var(--ink); font-family:Georgia,'Times New Roman',serif;}
+
+  /* ---------- setup screen ---------- */
+  #setup{max-width:680px; margin:0 auto; padding:26px 20px 60px; display:flex; flex-direction:column; gap:16px;}
+  h1{font-size:26px; letter-spacing:.4px;}
+  .hint{font-size:14px; opacity:.72; line-height:1.5;}
+  textarea{width:100%; min-height:36vh; background:var(--paper); border:1px solid #d8cdb6; border-radius:10px;
+           padding:14px; font:16px/1.6 Georgia,serif; color:var(--ink); resize:vertical;}
+  .row{display:flex; align-items:center; gap:12px;}
+  .row label{font-size:14px; width:92px; flex:none;}
+  input[type=range]{flex:1; accent-color:var(--accent); min-width:100px;}
+  .val{font-size:14px; width:52px; text-align:right; font-variant-numeric:tabular-nums; flex:none;}
+  .btns{display:flex; gap:12px; flex-wrap:wrap; margin-top:6px;}
+  .btn{appearance:none; border:none; border-radius:12px; padding:16px 18px; font:600 17px Georgia,serif;
+       cursor:pointer; flex:1; min-width:170px;}
+  .btn.primary{background:var(--accent); color:#fff8ee;}
+  .btn.ghost{background:var(--soft); color:var(--ink);}
+  #camNote{font-size:13px; opacity:.65; line-height:1.5;}
+
+  /* ---------- stage ---------- */
+  #stage{position:fixed; inset:0; background:#000; display:none; touch-action:none; overflow:hidden;}
+  #cam{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); background:#000;}
+  #scriptPane{position:absolute; left:0; right:0; top:0; height:50%; overflow:hidden;
+              background:rgba(10,8,5,.74); -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px);}
+  #stage.scrollOnly #scriptPane{height:100%; background:#0E0B08;}
+  #stage.mirror #scriptPane{transform:scaleX(-1);}
+  #scroller{padding:0 6vw; color:#F7EFDD; line-height:1.55; white-space:pre-wrap; will-change:transform;
+            font-family:Georgia,serif;}
+  #readLine{position:absolute; left:0; right:0; top:26%; height:0; border-top:1px solid rgba(247,239,221,.25); pointer-events:none;}
+
+  /* controls bar */
+  #bar{position:absolute; left:0; right:0; bottom:0; padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+       display:flex; align-items:center; justify-content:center; gap:10px;
+       background:linear-gradient(transparent, rgba(0,0,0,.55));}
+  .cbtn{appearance:none; border:none; width:46px; height:46px; border-radius:50%; background:rgba(30,25,18,.72);
+        color:#F7EFDD; font:600 18px Georgia,serif; cursor:pointer; flex:none; display:flex; align-items:center; justify-content:center;}
+  .cbtn:active{background:rgba(70,58,40,.85);}
+  #recBtn{width:64px; height:64px; background:#fff; position:relative;}
+  #recBtn::after{content:""; position:absolute; inset:8px; border-radius:50%; background:#C0392B; transition:border-radius .15s, inset .15s;}
+  #recBtn.on::after{inset:18px; border-radius:6px;}
+  #stage.scrollOnly #recBtn{display:none;}
+
+  /* record clock */
+  #clock{position:absolute; top:calc(10px + env(safe-area-inset-top)); right:14px; color:#fff; font:600 15px Georgia,serif;
+         background:rgba(0,0,0,.5); border-radius:999px; padding:6px 12px; display:none; align-items:center; gap:8px;}
+  #clock .dot{width:10px; height:10px; border-radius:50%; background:#E74C3C; animation:blink 1.2s infinite;}
+  @keyframes blink{50%{opacity:.25;}}
+
+  /* countdown + finish overlays */
+  #count{position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+         font:700 20vh Georgia,serif; color:#F7EFDD; background:rgba(0,0,0,.45); pointer-events:none;}
+  #done{position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center;
+        gap:16px; background:rgba(10,8,5,.92); padding:24px;}
+  #done video{max-width:min(92vw,420px); max-height:50vh; border-radius:12px; background:#000;}
+  #done .btn{flex:none; min-width:220px; text-align:center; text-decoration:none;}
+  #done .hint{color:#d9d0bd;}
+</style>
+</head>
+<body>
+
+<div id="setup">
+  <h1>Teleprompter</h1>
+  <p class="hint">Paste your piece below. Camera mode scrolls it over the front camera and records; scroll mode is text only, for the laptop propped behind a phone. Everything stays on this device.</p>
+  <textarea id="script" placeholder="Paste your piece here."></textarea>
+  <div class="row"><label for="speed">Speed</label><input type="range" id="speed" min="12" max="160" step="2" value="55"><span class="val" id="speedVal"></span></div>
+  <div class="row"><label for="fsize">Text size</label><input type="range" id="fsize" min="20" max="72" step="2" value="34"><span class="val" id="fsizeVal"></span></div>
+  <div class="btns">
+    <button class="btn primary" id="goCam">Camera + record</button>
+    <button class="btn ghost" id="goScroll">Scroll only</button>
+  </div>
+  <p id="camNote">Camera mode needs this page served over https (it will say so if the browser refuses). Tap the text while prompting to pause and resume. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
+</div>
+
+<div id="stage">
+  <video id="cam" autoplay muted playsinline></video>
+  <div id="scriptPane"><div id="scroller"></div><div id="readLine"></div></div>
+  <div id="clock"><span class="dot"></span><span id="clockTxt">0:00</span></div>
+  <div id="count"></div>
+  <div id="bar">
+    <button class="cbtn" id="exitBtn" title="Exit">✕</button>
+    <button class="cbtn" id="restartBtn" title="Back to top">⟲</button>
+    <button class="cbtn" id="slowBtn" title="Slower">−</button>
+    <button class="cbtn" id="recBtn" title="Record"></button>
+    <button class="cbtn" id="fastBtn" title="Faster">+</button>
+    <button class="cbtn" id="smallBtn" title="Smaller text">A−</button>
+    <button class="cbtn" id="bigBtn" title="Bigger text">A+</button>
+    <button class="cbtn" id="mirrorBtn" title="Mirror (for beam-splitter rigs)">⇋</button>
+  </div>
+  <div id="done">
+    <video id="playback" controls playsinline></video>
+    <a class="btn primary" id="saveBtn" download>Save recording</a>
+    <button class="btn ghost" id="againBtn">Record again</button>
+    <button class="btn ghost" id="closeDoneBtn">Back to script</button>
+    <p class="hint" id="doneHint">On iPhone the save lands in Files; you can also long-press the preview.</p>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  var stage=$("stage"), pane=$("scriptPane"), scroller=$("scroller"), cam=$("cam");
+  var mode="scroll", playing=false, y=0, lastT=0, rafId=null;
+  var stream=null, rec=null, chunks=[], recExt="webm", clockId=null, recStart=0, wakeLock=null;
+
+  /* ---------- settings ---------- */
+  function lsGet(k,d){ try{ var v=localStorage.getItem("tp_"+k); return v===null?d:v; }catch(e){ return d; } }
+  function lsSet(k,v){ try{ localStorage.setItem("tp_"+k, v); }catch(e){} }
+
+  var speed=+lsGet("speed",55), fsize=+lsGet("fsize",34);
+  $("script").value = lsGet("script","");
+  $("speed").value = speed; $("fsize").value = fsize;
+
+  function showVals(){
+    $("speedVal").textContent = speed;
+    $("fsizeVal").textContent = fsize+"px";
+    scroller.style.fontSize = fsize+"px";
+  }
+  showVals();
+
+  $("script").addEventListener("input", function(){ lsSet("script", this.value); });
+  $("speed").addEventListener("input", function(){ speed=+this.value; lsSet("speed",speed); showVals(); });
+  $("fsize").addEventListener("input", function(){ fsize=+this.value; lsSet("fsize",fsize); showVals(); });
+
+  function setSpeed(d){ speed=Math.min(160,Math.max(12,speed+d)); $("speed").value=speed; lsSet("speed",speed); showVals(); }
+  function setSize(d){ fsize=Math.min(72,Math.max(20,fsize+d)); $("fsize").value=fsize; lsSet("fsize",fsize); showVals(); layoutPad(); }
+
+  /* ---------- scroll engine ---------- */
+  function layoutPad(){
+    var mark = pane.clientHeight * (mode==="camera" ? 0.26 : 0.26);
+    scroller.style.paddingTop = mark+"px";
+    scroller.style.paddingBottom = pane.clientHeight+"px";
+  }
+  function apply(){ scroller.style.transform = "translateY("+(-y)+"px)"; }
+  function tick(t){
+    if(playing){
+      if(lastT) y += speed*(t-lastT)/1000;
+      var max = scroller.scrollHeight - pane.clientHeight*0.26;
+      if(y>=max){ y=max; playing=false; }
+      apply();
+    }
+    lastT=t;
+    rafId=requestAnimationFrame(tick);
+  }
+  function restart(){ y=0; apply(); }
+
+  pane.addEventListener("click", function(){ playing=!playing; });
+
+  /* ---------- stage open / close ---------- */
+  function openStage(m){
+    mode=m;
+    scroller.textContent = $("script").value || "Your script is empty. Exit and paste your piece first.";
+    stage.classList.toggle("scrollOnly", m==="scroll");
+    stage.style.display="block";
+    $("setup").style.display="none";
+    restart(); playing=false; lastT=0;
+    layoutPad(); showVals();
+    if(!rafId) rafId=requestAnimationFrame(tick);
+    if(navigator.wakeLock && navigator.wakeLock.request){
+      navigator.wakeLock.request("screen").then(function(w){ wakeLock=w; }).catch(function(){});
+    }
+    if(document.documentElement.requestFullscreen && m==="scroll"){
+      document.documentElement.requestFullscreen().catch(function(){});
+    }
+  }
+  function closeStage(){
+    playing=false;
+    if(rec && rec.state!=="inactive") rec.stop();
+    stopClock();
+    if(stream){ stream.getTracks().forEach(function(tr){ tr.stop(); }); stream=null; }
+    cam.srcObject=null;
+    if(wakeLock){ wakeLock.release().catch(function(){}); wakeLock=null; }
+    if(document.fullscreenElement) document.exitFullscreen().catch(function(){});
+    $("done").style.display="none";
+    stage.style.display="none";
+    $("setup").style.display="flex";
+  }
+
+  $("goScroll").addEventListener("click", function(){ openStage("scroll"); });
+  $("goCam").addEventListener("click", function(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      alert("This browser will not open the camera here. The page must be served over https (not opened as a plain file)."); return;
+    }
+    navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:"user", width:{ideal:1920}, height:{ideal:1080} },
+      audio:true
+    }).then(function(s){
+      stream=s; cam.srcObject=s;
+      openStage("camera");
+    }).catch(function(err){
+      alert("Camera did not open: "+err.message+"\n\nCheck that the browser has camera and microphone permission for this page.");
+    });
+  });
+
+  $("exitBtn").addEventListener("click", closeStage);
+  $("restartBtn").addEventListener("click", function(){ restart(); });
+  $("slowBtn").addEventListener("click", function(){ setSpeed(-6); });
+  $("fastBtn").addEventListener("click", function(){ setSpeed(6); });
+  $("smallBtn").addEventListener("click", function(){ setSize(-4); });
+  $("bigBtn").addEventListener("click", function(){ setSize(4); });
+  $("mirrorBtn").addEventListener("click", function(){ stage.classList.toggle("mirror"); });
+  window.addEventListener("resize", function(){ if(stage.style.display==="block") layoutPad(); });
+
+  document.addEventListener("keydown", function(e){
+    if(stage.style.display!=="block") return;
+    if(e.code==="Space"){ e.preventDefault(); playing=!playing; }
+    else if(e.key==="ArrowUp"||e.key==="ArrowRight") setSpeed(6);
+    else if(e.key==="ArrowDown"||e.key==="ArrowLeft") setSpeed(-6);
+    else if(e.key==="r"||e.key==="R") restart();
+    else if(e.key==="Escape") closeStage();
+  });
+
+  /* ---------- recording ---------- */
+  function pickMime(){
+    var types=["video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/mp4",
+               "video/webm;codecs=h264,opus","video/webm;codecs=vp9,opus","video/webm"];
+    for(var i=0;i<types.length;i++){
+      if(window.MediaRecorder && MediaRecorder.isTypeSupported(types[i])) return types[i];
+    }
+    return "";
+  }
+  function fmtClock(s){ return Math.floor(s/60)+":"+("0"+Math.floor(s%60)).slice(-2); }
+  function startClock(){
+    recStart=Date.now(); $("clock").style.display="flex";
+    clockId=setInterval(function(){ $("clockTxt").textContent=fmtClock((Date.now()-recStart)/1000); },500);
+  }
+  function stopClock(){ if(clockId){ clearInterval(clockId); clockId=null; } $("clock").style.display="none"; }
+
+  $("recBtn").addEventListener("click", function(){
+    if(rec && rec.state==="recording"){ playing=false; rec.stop(); return; }
+    if(!window.MediaRecorder){ alert("This browser cannot record video. Update it, or use the scroll-only mode with a separate camera app."); return; }
+    var n=3, cd=$("count");
+    cd.textContent=n; cd.style.display="flex";
+    var iv=setInterval(function(){
+      n--;
+      if(n>0){ cd.textContent=n; return; }
+      clearInterval(iv); cd.style.display="none";
+      var mime=pickMime();
+      recExt = mime.indexOf("mp4")>-1 ? "mp4" : "webm";
+      chunks=[];
+      try{ rec = mime ? new MediaRecorder(stream,{mimeType:mime}) : new MediaRecorder(stream); }
+      catch(e){ alert("Recording could not start: "+e.message); return; }
+      rec.ondataavailable=function(ev){ if(ev.data && ev.data.size) chunks.push(ev.data); };
+      rec.onstop=finishRecording;
+      rec.start(1000);
+      $("recBtn").classList.add("on");
+      startClock();
+      restart(); playing=true;
+    },1000);
+  });
+
+  function finishRecording(){
+    $("recBtn").classList.remove("on");
+    stopClock();
+    var blob=new Blob(chunks,{type: recExt==="mp4"?"video/mp4":"video/webm"});
+    var url=URL.createObjectURL(blob);
+    var d=new Date();
+    var stamp=d.getFullYear()+("0"+(d.getMonth()+1)).slice(-2)+("0"+d.getDate()).slice(-2)+"-"+("0"+d.getHours()).slice(-2)+("0"+d.getMinutes()).slice(-2);
+    $("playback").src=url;
+    $("saveBtn").href=url;
+    $("saveBtn").setAttribute("download","teleprompter-"+stamp+"."+recExt);
+    $("done").style.display="flex";
+  }
+  $("againBtn").addEventListener("click", function(){
+    $("done").style.display="none"; restart(); playing=false;
+  });
+  $("closeDoneBtn").addEventListener("click", closeStage);
+
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState==="visible" && stage.style.display==="block" &&
+       navigator.wakeLock && navigator.wakeLock.request){
+      navigator.wakeLock.request("screen").then(function(w){ wakeLock=w; }).catch(function(){});
+    }
+  });
+})();
+</script>
+</body>
+</html>
