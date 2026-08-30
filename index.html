@@ -57,10 +57,20 @@
 
   /* zoom slider */
   #zoomBox{position:absolute; left:50%; transform:translateX(-50%); bottom:calc(86px + env(safe-area-inset-bottom));
-           display:none; align-items:center; gap:10px; background:rgba(30,25,18,.72); border-radius:999px;
+           display:none; align-items:center; justify-content:center; flex-wrap:wrap; gap:10px; max-width:92vw;
+           background:rgba(30,25,18,.72); border-radius:18px;
            padding:8px 16px; color:#F7EFDD; font:600 13px Georgia,serif;}
-  #zoomBox input{width:min(46vw,240px); accent-color:#C0392B;}
-  #stage.scrollOnly #zoomBox{display:none !important;}
+  #zoomBox input{width:min(40vw,220px); accent-color:#C0392B;}
+  #zoomChips{display:flex; gap:6px; flex-wrap:wrap; justify-content:center;}
+  #zoomChips button{appearance:none; border:none; border-radius:999px; padding:6px 11px; font:600 12px Georgia,serif;
+                    background:rgba(255,255,255,.12); color:#F7EFDD; cursor:pointer;}
+  #zoomChips button.active{background:#C0392B; color:#fff;}
+  #lensSheet{position:absolute; left:50%; transform:translateX(-50%); bottom:calc(150px + env(safe-area-inset-bottom));
+             display:none; flex-direction:column; gap:8px; background:rgba(20,16,11,.88); border-radius:14px; padding:10px;}
+  #lensSheet button{appearance:none; border:none; border-radius:10px; padding:10px 18px; font:600 15px Georgia,serif;
+                    background:rgba(255,255,255,.08); color:#F7EFDD; cursor:pointer; min-width:160px;}
+  #lensSheet button.active{background:#C0392B; color:#fff;}
+  #stage.scrollOnly #zoomBox, #stage.scrollOnly #lensSheet{display:none !important;}
 
   /* record clock */
   #clock{position:absolute; top:calc(10px + env(safe-area-inset-top)); right:14px; color:#fff; font:600 15px Georgia,serif;
@@ -90,14 +100,15 @@
     <button class="btn primary" id="goCam">Camera + record</button>
     <button class="btn ghost" id="goScroll">Scroll only</button>
   </div>
-  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam cycles through the phone's lenses, ▤ resizes and lightens the band, and a Zoom slider appears when the active lens supports it (slide left for the widest view). Tapping the text mid-take pauses the recording and the scroll together; tap again and the same take continues. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
+  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam opens the lens list (Back 1, Back 2, Front...), ▤ resizes and lightens the band, and when the active lens can zoom you get preset steps plus a slider (leftmost is the widest view). Tapping the text mid-take pauses the recording and the scroll together; tap again and the same take continues. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
 </div>
 
 <div id="stage">
   <video id="cam" autoplay muted playsinline></video>
   <div id="scriptPane"><div id="scroller"></div><div id="readLine"></div></div>
   <div id="clock"><span class="dot"></span><span id="clockTxt">0:00</span></div>
-  <div id="zoomBox"><span>Zoom</span><input type="range" id="zoom"></div>
+  <div id="zoomBox"><span>Zoom</span><input type="range" id="zoom"><div id="zoomChips"></div></div>
+  <div id="lensSheet"></div>
   <div id="count"></div>
   <div id="bar">
     <button class="cbtn" id="exitBtn" title="Exit">✕</button>
@@ -202,6 +213,8 @@
     cam.srcObject=null;
     if(wakeLock){ wakeLock.release().catch(function(){}); wakeLock=null; }
     if(document.fullscreenElement) document.exitFullscreen().catch(function(){});
+    $("lensSheet").style.display="none";
+    $("zoomBox").style.display="none";
     $("done").style.display="none";
     stage.style.display="none";
     $("setup").style.display="flex";
@@ -224,13 +237,30 @@
     cam.style.transform = front ? "scaleX(-1)" : "none";
   }
   function setupZoom(){
-    var box=$("zoomBox"), z=$("zoom");
+    var box=$("zoomBox"), z=$("zoom"), chips=$("zoomChips");
     var tr=stream && stream.getVideoTracks()[0];
     var caps=tr && tr.getCapabilities ? tr.getCapabilities() : {};
+    chips.innerHTML="";
     if(caps.zoom && caps.zoom.max>caps.zoom.min){
       z.min=caps.zoom.min; z.max=caps.zoom.max; z.step=caps.zoom.step||0.1;
       z.value=(tr.getSettings && tr.getSettings().zoom) || caps.zoom.min;
-      z.oninput=function(){ tr.applyConstraints({advanced:[{zoom:+z.value}]}).catch(function(){}); };
+      function markChip(){
+        var cur=Math.round((+z.value)*10)/10;
+        Array.prototype.forEach.call(chips.children, function(c){ c.classList.toggle("active", +c.dataset.v===cur); });
+      }
+      var seen={};
+      [caps.zoom.min,1,2,3,5,caps.zoom.max].forEach(function(v){
+        if(v<caps.zoom.min-0.001 || v>caps.zoom.max+0.001) return;
+        var key=Math.round(v*10)/10; if(seen[key]) return; seen[key]=1;
+        var b=document.createElement("button");
+        b.textContent=key+"x"; b.dataset.v=key;
+        b.addEventListener("click", function(){
+          z.value=v; tr.applyConstraints({advanced:[{zoom:v}]}).catch(function(){}); markChip();
+        });
+        chips.appendChild(b);
+      });
+      z.oninput=function(){ tr.applyConstraints({advanced:[{zoom:+z.value}]}).catch(function(){}); markChip(); };
+      markChip();
       box.style.display="flex";
     } else {
       box.style.display="none";
@@ -251,15 +281,39 @@
       alert("Camera did not open: "+err.message+"\n\nCheck that the browser has camera and microphone permission for this page.");
     });
   });
-  $("camBtn").addEventListener("click", function(){
-    if(rec && rec.state==="recording") return;
-    if(vids.length<2){ refreshVids(); return; }
-    vidIdx=(vidIdx+1)%vids.length;
-    var id=vids[vidIdx].deviceId;
+  function buildLensSheet(){
+    var sheet=$("lensSheet"); sheet.innerHTML="";
+    var backN=0, frontN=0, otherN=0;
+    vids.forEach(function(d, i){
+      var l=(d.label||"").toLowerCase(), name;
+      if(/front|user/.test(l)){ frontN++; name="Front "+frontN; }
+      else if(/back|rear|environment/.test(l)){ backN++; name="Back "+backN; }
+      else { otherN++; name="Lens "+otherN; }
+      var b=document.createElement("button");
+      b.textContent=name;
+      if(i===vidIdx) b.className="active";
+      b.addEventListener("click", function(){ sheet.style.display="none"; switchTo(i); });
+      sheet.appendChild(b);
+    });
+  }
+  function switchTo(i){
+    if(rec && rec.state!=="inactive") return;
+    if(!vids[i]) return;
+    vidIdx=i;
+    var id=vids[i].deviceId;
     if(stream) stream.getTracks().forEach(function(t){ t.stop(); });
-    openCam({ deviceId:{exact:id}, width:{ideal:1920}, height:{ideal:1080} }).catch(function(err){
+    openCam({ deviceId:{exact:id}, width:{ideal:1920}, height:{ideal:1080} }).then(buildLensSheet).catch(function(err){
       alert("That camera did not open: "+err.message);
-      openCam({ facingMode:"user" }).catch(function(){});
+      openCam({ facingMode:"user" }).then(buildLensSheet).catch(function(){});
+    });
+  }
+  $("camBtn").addEventListener("click", function(){
+    if(rec && rec.state!=="inactive") return;
+    var sheet=$("lensSheet");
+    if(sheet.style.display==="flex"){ sheet.style.display="none"; return; }
+    refreshVids().then(function(){
+      buildLensSheet();
+      sheet.style.display="flex";
     });
   });
 
