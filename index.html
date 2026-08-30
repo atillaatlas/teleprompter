@@ -53,7 +53,12 @@
   #stage.scrollOnly #recBtn{display:none;}
   #stage.scrollOnly #camBtn, #stage.scrollOnly #paneBtn, #stage.scrollOnly #fitBtn{display:none;}
   #stage.cameraMode #mirrorBtn{display:none;}
-  #camBtn, #fitBtn, #flipBtn{font-size:13px;}
+  #camBtn, #fitBtn, #flipBtn, #hideBtn{font-size:13px;}
+  #showBtn{position:absolute; right:12px; bottom:calc(12px + env(safe-area-inset-bottom)); width:40px; height:40px;
+           border-radius:50%; border:none; background:rgba(30,25,18,.45); color:rgba(247,239,221,.85);
+           font-size:18px; display:none; cursor:pointer;}
+  #stage.hideCtl #showBtn{display:block;}
+  #stage.scrollOnly #hideBtn, #stage.scrollOnly #showBtn{display:none !important;}
   #bar{flex-wrap:wrap;}
   #stage.flip180{transform:rotate(180deg);}
   #stage.hideCtl #bar, #stage.hideCtl #zoomBox, #stage.hideCtl #lensSheet{display:none !important;}
@@ -70,9 +75,11 @@
                     background:rgba(255,255,255,.12); color:#F7EFDD; cursor:pointer;}
   #zoomChips button.active{background:#C0392B; color:#fff;}
   #lensSheet{position:absolute; left:50%; transform:translateX(-50%); bottom:calc(150px + env(safe-area-inset-bottom));
-             display:none; flex-direction:column; gap:8px; background:rgba(20,16,11,.88); border-radius:14px; padding:10px;}
-  #lensSheet button{appearance:none; border:none; border-radius:10px; padding:10px 18px; font:600 15px Georgia,serif;
-                    background:rgba(255,255,255,.08); color:#F7EFDD; cursor:pointer; min-width:160px;}
+             display:none; flex-direction:column; gap:8px; background:rgba(20,16,11,.88); border-radius:14px; padding:10px;
+             max-height:48vh; max-width:92vw; overflow-y:auto;}
+  #lensSheet button{appearance:none; border:none; border-radius:10px; padding:9px 16px; font:600 14px Georgia,serif;
+                    background:rgba(255,255,255,.08); color:#F7EFDD; cursor:pointer; min-width:160px; max-width:80vw;
+                    white-space:normal; flex:none;}
   #lensSheet button.active{background:#C0392B; color:#fff;}
   #stage.scrollOnly #zoomBox, #stage.scrollOnly #lensSheet{display:none !important;}
 
@@ -104,7 +111,7 @@
     <button class="btn primary" id="goCam">Camera + record</button>
     <button class="btn ghost" id="goScroll">Scroll only</button>
   </div>
-  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam opens the lens list (Back 1, Back 2, Front...), ▤ resizes and lightens the band, and when the active lens can zoom you get preset steps plus a slider, and every lens opens at its widest. Fit switches the preview between the whole recorded frame and filling the screen; the recording always captures the whole frame. 180 turns the text and buttons upside down for flipped propping while your face stays upright. Tapping your face area hides the buttons and sliders for a clean view; tap again to bring them back. Tapping the text mid-take pauses the recording and the scroll together; tap again and the same take continues. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
+  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam opens the lens list (Back 1, Back 2, Front...), ▤ resizes and lightens the band, and when the active lens can zoom you get preset steps plus a slider, and every lens opens at its widest. Fit switches the preview between the whole recorded frame and filling the screen; the recording always captures the whole frame. 180 turns the text and buttons upside down for flipped propping while your face stays upright. Hide tucks every control away for a clean view; the faint dot in the bottom corner brings them back. Tapping the text mid-take pauses the recording and the scroll together; tap again and the same take continues. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
 </div>
 
 <div id="stage">
@@ -113,6 +120,7 @@
   <div id="clock"><span class="dot"></span><span id="clockTxt">0:00</span></div>
   <div id="zoomBox"><span>Zoom</span><input type="range" id="zoom"><div id="zoomChips"></div></div>
   <div id="lensSheet"></div>
+  <button id="showBtn" title="Show controls">⊙</button>
   <div id="count"></div>
   <div id="bar">
     <button class="cbtn" id="exitBtn" title="Exit">✕</button>
@@ -126,6 +134,7 @@
     <button class="cbtn" id="paneBtn" title="Script box size and shade">▤</button>
     <button class="cbtn" id="fitBtn" title="Preview fit: whole frame or fill screen">Fit</button>
     <button class="cbtn" id="flipBtn" title="Rotate everything 180 for upside-down propping">180</button>
+    <button class="cbtn" id="hideBtn" title="Hide all controls">Hide</button>
     <button class="cbtn" id="mirrorBtn" title="Mirror (for beam-splitter rigs)">⇋</button>
   </div>
   <div id="done">
@@ -358,6 +367,8 @@
     if(stage.classList.contains("scrollOnly")) return;
     stage.classList.toggle("hideCtl");
   });
+  $("hideBtn").addEventListener("click", function(){ stage.classList.add("hideCtl"); });
+  $("showBtn").addEventListener("click", function(){ stage.classList.remove("hideCtl"); });
 
   $("exitBtn").addEventListener("click", closeStage);
   $("restartBtn").addEventListener("click", function(){ restart(); });
