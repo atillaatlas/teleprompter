@@ -351,7 +351,7 @@
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
       alert("This browser will not open the camera here. The page must be served over https (not opened as a plain file)."); return;
     }
-    openCam({ facingMode:"user", width:{ideal:1440}, height:{ideal:1080}, frameRate:{ideal:30, max:30} }).then(function(){
+    openCam({ facingMode:"user", width:{ideal:1080}, height:{ideal:1920}, aspectRatio:{ideal:0.5625}, frameRate:{ideal:30, max:30} }).then(function(){
       openStage("camera");
     }).catch(function(err){
       alert("Camera did not open: "+err.message+"\n\nCheck that the browser has camera and microphone permission for this page.");
@@ -385,7 +385,7 @@
     vidIdx=i;
     var id=vids[i].deviceId;
     if(stream) stream.getVideoTracks().forEach(function(t){ t.stop(); });
-    openCam({ deviceId:{exact:id}, width:{ideal:1440}, height:{ideal:1080}, frameRate:{ideal:30, max:30} }).then(buildLensSheet).catch(function(err){
+    openCam({ deviceId:{exact:id}, width:{ideal:1080}, height:{ideal:1920}, aspectRatio:{ideal:0.5625}, frameRate:{ideal:30, max:30} }).then(buildLensSheet).catch(function(err){
       alert("That camera did not open: "+err.message);
       openCam({ facingMode:"user" }).then(buildLensSheet).catch(function(){});
     });
@@ -564,7 +564,10 @@
     $("saveBtn").setAttribute("download","teleprompter-"+stamp+"."+recExt);
     var mb=(blob.size/1048576).toFixed(1);
     var snd=audioLive() ? "sound recorded" : "NO SOUND on this take";
-    $("doneHint").textContent = mb+" MB, "+snd+". On iPhone the save lands in Files; on Android look in Downloads.";
+    var vt=stream && stream.getVideoTracks()[0];
+    var st=vt && vt.getSettings ? vt.getSettings() : {};
+    var dim=(st.width&&st.height) ? st.width+"x"+st.height+", " : "";
+    $("doneHint").textContent = dim+mb+" MB, "+snd+". On Android the file lands in Downloads.";
     $("done").style.display="flex";
   }
   $("againBtn").addEventListener("click", function(){
