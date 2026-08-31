@@ -480,21 +480,30 @@
       n--;
       if(n>0){ cd.textContent=n; return; }
       clearInterval(iv); cd.style.display="none";
-      var mime=pickMime();
-      recExt = mime.indexOf("mp4")>-1 ? "mp4" : "webm";
-      chunks=[];
-      var opts = mime ? {mimeType:mime} : {};
-      opts.videoBitsPerSecond = 4000000; opts.audioBitsPerSecond = 128000;
-      var recStream = FILTERS[fIdx].css==="none" ? stream : makeFilteredStream();
-      try{ rec = new MediaRecorder(recStream, opts); }
-      catch(e){ alert("Recording could not start: "+e.message); return; }
-      rec.ondataavailable=function(ev){ if(ev.data && ev.data.size) chunks.push(ev.data); };
-      rec.onstop=finishRecording;
-      rec.start(1000);
-      $("recBtn").classList.add("on");
-      startClock();
-      restart(); playing=false;
-      setTimeout(function(){ rampT0=performance.now(); playing=true; }, 1000);
+      var ensureAudio = stream.getAudioTracks().length ? Promise.resolve()
+        : navigator.mediaDevices.getUserMedia({audio:true}).then(function(a){
+            a.getAudioTracks().forEach(function(t){ stream.addTrack(t); });
+          }).catch(function(){});
+      ensureAudio.then(function(){
+        if(!stream.getAudioTracks().length){
+          alert("No microphone is available, so this take would be silent. Check Chrome's microphone permission for this page (the padlock next to the address).");
+        }
+        var mime=pickMime();
+        recExt = mime.indexOf("mp4")>-1 ? "mp4" : "webm";
+        chunks=[];
+        var opts = mime ? {mimeType:mime} : {};
+        opts.videoBitsPerSecond = 2500000; opts.audioBitsPerSecond = 96000;
+        var recStream = FILTERS[fIdx].css==="none" ? stream : makeFilteredStream();
+        try{ rec = new MediaRecorder(recStream, opts); }
+        catch(e){ alert("Recording could not start: "+e.message); return; }
+        rec.ondataavailable=function(ev){ if(ev.data && ev.data.size) chunks.push(ev.data); };
+        rec.onstop=finishRecording;
+        rec.start(1000);
+        $("recBtn").classList.add("on");
+        startClock();
+        restart(); playing=false;
+        setTimeout(function(){ rampT0=performance.now(); playing=true; }, 1000);
+      });
     },1000);
   });
 
@@ -509,6 +518,9 @@
     $("playback").src=url;
     $("saveBtn").href=url;
     $("saveBtn").setAttribute("download","teleprompter-"+stamp+"."+recExt);
+    var mb=(blob.size/1048576).toFixed(1);
+    var snd=(stream && stream.getAudioTracks().length) ? "sound recorded" : "NO SOUND on this take";
+    $("doneHint").textContent = mb+" MB, "+snd+". On iPhone the save lands in Files; on Android look in Downloads.";
     $("done").style.display="flex";
   }
   $("againBtn").addEventListener("click", function(){
