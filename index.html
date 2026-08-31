@@ -32,9 +32,9 @@
   #cam{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); background:#000;}
   #lift{position:absolute; inset:0; mix-blend-mode:lighten; pointer-events:none; display:none;}
   #scriptPane{position:absolute; left:0; right:0; top:0; height:36%; overflow:hidden;
-              background:rgba(10,8,5,.62); -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px);}
+              background:rgba(10,8,5,.62);}
   #stage.paneTall #scriptPane{height:62%;}
-  #stage.paneGlass #scriptPane{height:42%; background:rgba(10,8,5,.26); -webkit-backdrop-filter:none; backdrop-filter:none;}
+  #stage.paneGlass #scriptPane{height:42%; background:rgba(10,8,5,.26);}
   #stage.scrollOnly #scriptPane{height:100%; background:#0E0B08;}
   #stage.mirror #scriptPane{transform:scaleX(-1);}
   #scroller{padding:0 4vw; color:#F7EFDD; line-height:1.55; white-space:pre-wrap; will-change:transform;
@@ -307,7 +307,7 @@
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
       alert("This browser will not open the camera here. The page must be served over https (not opened as a plain file)."); return;
     }
-    openCam({ facingMode:"user", width:{ideal:1920}, height:{ideal:1440} }).then(function(){
+    openCam({ facingMode:"user", width:{ideal:1440}, height:{ideal:1080}, frameRate:{ideal:30, max:30} }).then(function(){
       openStage("camera");
     }).catch(function(err){
       alert("Camera did not open: "+err.message+"\n\nCheck that the browser has camera and microphone permission for this page.");
@@ -341,7 +341,7 @@
     vidIdx=i;
     var id=vids[i].deviceId;
     if(stream) stream.getTracks().forEach(function(t){ t.stop(); });
-    openCam({ deviceId:{exact:id}, width:{ideal:1920}, height:{ideal:1440} }).then(buildLensSheet).catch(function(err){
+    openCam({ deviceId:{exact:id}, width:{ideal:1440}, height:{ideal:1080}, frameRate:{ideal:30, max:30} }).then(buildLensSheet).catch(function(err){
       alert("That camera did not open: "+err.message);
       openCam({ facingMode:"user" }).then(buildLensSheet).catch(function(){});
     });
