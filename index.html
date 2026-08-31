@@ -55,6 +55,11 @@
   #stage.scrollOnly #camBtn, #stage.scrollOnly #paneBtn, #stage.scrollOnly #fitBtn{display:none;}
   #stage.cameraMode #mirrorBtn{display:none;}
   #camBtn, #fitBtn, #flipBtn, #hideBtn, #fxBtn{font-size:13px;}
+  #mic{position:absolute; left:50%; transform:translateX(-50%); bottom:calc(74px + env(safe-area-inset-bottom));
+       width:min(60vw,260px); height:8px; border-radius:999px; background:rgba(255,255,255,.16); display:none; overflow:hidden;}
+  #micFill{height:100%; width:0%; background:#5FBF6A; transition:width .12s linear;}
+  #mic.dead{background:rgba(192,57,43,.5);}
+  #stage.scrollOnly #mic, #stage.hideCtl #mic{display:none !important;}
   #stage.scrollOnly #fxBtn{display:none !important;}
   #showBtn{position:absolute; right:12px; bottom:calc(12px + env(safe-area-inset-bottom)); width:40px; height:40px;
            border-radius:50%; border:none; background:rgba(30,25,18,.45); color:rgba(247,239,221,.85);
@@ -112,7 +117,7 @@
     <button class="btn primary" id="goCam">Camera + record</button>
     <button class="btn ghost" id="goScroll">Scroll only</button>
   </div>
-  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam opens the lens list (Back 1, Back 2, Front...), ▤ resizes and lightens the band, and when the active lens can zoom you get preset steps plus a slider, and every lens opens at its widest. Fit switches the preview between the whole recorded frame and filling the screen; the recording always captures the whole frame. 180 turns the text and buttons upside down for flipped propping while your face stays upright. Hide tucks every control away for a clean view; the faint dot in the bottom corner brings them back. Fx cycles color looks (Warm, Soft, Film, B&W) that are baked into the recording; pick before you record. Tapping the text mid-take pauses the recording and the scroll together; tap again and the same take continues. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
+  <p id="camNote">The script band sits only on your preview; the recording always shows your full face. Cam opens the lens list (Back 1, Back 2, Front...), ▤ resizes and lightens the band, and when the active lens can zoom you get preset steps plus a slider, and every lens opens at its widest. Fit switches the preview between the whole recorded frame and filling the screen; the recording always captures the whole frame. 180 turns the text and buttons upside down for flipped propping while your face stays upright. Hide tucks every control away for a clean view; the faint dot in the bottom corner brings them back. Fx cycles color looks (NY, Warm, Film, Soft, B&W) that are baked into the recording; pick before you record. The green bar above the buttons is the live microphone level: speak and watch it move before you start, and if it sits red the mic is not connected. Tapping the text mid-take pauses the recording and the scroll together; tap again and the same take continues. Keys on a laptop: space pause, arrows speed, Esc exit.</p>
 </div>
 
 <div id="stage">
@@ -120,6 +125,7 @@
   <div id="lift"></div>
   <div id="scriptPane"><div id="scroller"></div><div id="readLine"></div></div>
   <div id="clock"><span class="dot"></span><span id="clockTxt">0:00</span></div>
+  <div id="mic"><div id="micFill"></div></div>
   <div id="zoomBox"><span>Zoom</span><input type="range" id="zoom"><div id="zoomChips"></div></div>
   <div id="lensSheet"></div>
   <button id="showBtn" title="Show controls">⊙</button>
@@ -233,7 +239,9 @@
     if(rec && rec.state!=="inactive") rec.stop();
     stopClock();
     stopFiltered();
+    stopMeter();
     if(stream){ stream.getTracks().forEach(function(tr){ tr.stop(); }); stream=null; }
+    if(audioTrack){ audioTrack.stop(); audioTrack=null; }
     cam.srcObject=null;
     if(wakeLock){ wakeLock.release().catch(function(){}); wakeLock=null; }
     if(document.fullscreenElement) document.exitFullscreen().catch(function(){});
@@ -298,9 +306,45 @@
       box.style.display="none";
     }
   }
+  var audioTrack=null;
+  function audioLive(){ return !!(audioTrack && audioTrack.readyState==="live"); }
+  function getAudio(){
+    if(audioLive()) return Promise.resolve(audioTrack);
+    return navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true}})
+      .then(function(a){ audioTrack=a.getAudioTracks()[0]; return audioTrack; })
+      .catch(function(){ audioTrack=null; return null; });
+  }
+  var actx=null, analyser=null, meterId=null, meterData=null;
+  function stopMeter(){
+    if(meterId){ clearInterval(meterId); meterId=null; }
+    if(actx){ try{ actx.close(); }catch(e){} actx=null; }
+  }
+  function startMeter(){
+    if(meterId && audioLive()) return;
+    stopMeter();
+    var box=$("mic");
+    if(!audioLive()){ box.className="dead"; box.style.display="block"; $("micFill").style.width="0%"; return; }
+    box.className=""; box.style.display="block";
+    try{
+      actx=new (window.AudioContext||window.webkitAudioContext)();
+      var src=actx.createMediaStreamSource(new MediaStream([audioTrack]));
+      analyser=actx.createAnalyser(); analyser.fftSize=256;
+      src.connect(analyser);
+      meterData=new Uint8Array(analyser.frequencyBinCount);
+      meterId=setInterval(function(){
+        analyser.getByteTimeDomainData(meterData);
+        var peak=0;
+        for(var i=0;i<meterData.length;i++){ var v=Math.abs(meterData[i]-128); if(v>peak) peak=v; }
+        $("micFill").style.width=Math.min(100, Math.round(peak/60*100))+"%";
+      },140);
+    }catch(e){}
+  }
   function openCam(videoConstraints){
-    return navigator.mediaDevices.getUserMedia({ video:videoConstraints, audio:true }).then(function(s){
-      stream=s; cam.srcObject=s; applyMirror(); setupZoom(); return refreshVids();
+    return navigator.mediaDevices.getUserMedia({ video:videoConstraints }).then(function(s){
+      return getAudio().then(function(at){
+        if(at) try{ s.addTrack(at); }catch(e){}
+        stream=s; cam.srcObject=s; applyMirror(); setupZoom(); startMeter(); return refreshVids();
+      });
     });
   }
   $("goCam").addEventListener("click", function(){
@@ -340,7 +384,7 @@
     if(!vids[i]) return;
     vidIdx=i;
     var id=vids[i].deviceId;
-    if(stream) stream.getTracks().forEach(function(t){ t.stop(); });
+    if(stream) stream.getVideoTracks().forEach(function(t){ t.stop(); });
     openCam({ deviceId:{exact:id}, width:{ideal:1440}, height:{ideal:1080}, frameRate:{ideal:30, max:30} }).then(buildLensSheet).catch(function(err){
       alert("That camera did not open: "+err.message);
       openCam({ facingMode:"user" }).then(buildLensSheet).catch(function(){});
@@ -457,8 +501,9 @@
 
   /* ---------- recording ---------- */
   function pickMime(){
-    var types=["video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/mp4",
-               "video/webm;codecs=h264,opus","video/webm;codecs=vp9,opus","video/webm"];
+    var types=["video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+               "video/webm;codecs=h264,opus","video/webm;codecs=vp9,opus",
+               "video/webm;codecs=vp8,opus","video/webm"];
     for(var i=0;i<types.length;i++){
       if(window.MediaRecorder && MediaRecorder.isTypeSupported(types[i])) return types[i];
     }
@@ -480,13 +525,12 @@
       n--;
       if(n>0){ cd.textContent=n; return; }
       clearInterval(iv); cd.style.display="none";
-      var ensureAudio = stream.getAudioTracks().length ? Promise.resolve()
-        : navigator.mediaDevices.getUserMedia({audio:true}).then(function(a){
-            a.getAudioTracks().forEach(function(t){ stream.addTrack(t); });
-          }).catch(function(){});
-      ensureAudio.then(function(){
-        if(!stream.getAudioTracks().length){
-          alert("No microphone is available, so this take would be silent. Check Chrome's microphone permission for this page (the padlock next to the address).");
+      getAudio().then(function(at){
+        startMeter();
+        if(at && stream.getAudioTracks().indexOf(at)===-1){ try{ stream.addTrack(at); }catch(e){} }
+        if(!audioLive()){
+          alert("The microphone is not live, so this take would be silent. Tap the padlock next to the address and allow Microphone, then try again.");
+          return;
         }
         var mime=pickMime();
         recExt = mime.indexOf("mp4")>-1 ? "mp4" : "webm";
@@ -519,7 +563,7 @@
     $("saveBtn").href=url;
     $("saveBtn").setAttribute("download","teleprompter-"+stamp+"."+recExt);
     var mb=(blob.size/1048576).toFixed(1);
-    var snd=(stream && stream.getAudioTracks().length) ? "sound recorded" : "NO SOUND on this take";
+    var snd=audioLive() ? "sound recorded" : "NO SOUND on this take";
     $("doneHint").textContent = mb+" MB, "+snd+". On iPhone the save lands in Files; on Android look in Downloads.";
     $("done").style.display="flex";
   }
