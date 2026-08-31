@@ -78,9 +78,11 @@
            padding:8px 16px; color:#F7EFDD; font:600 13px Georgia,serif;}
   #zoomBox input{width:min(40vw,220px); accent-color:#C0392B;}
   #zoomChips{display:flex; gap:6px; flex-wrap:wrap; justify-content:center;}
-  #zoomChips button{appearance:none; border:none; border-radius:999px; padding:6px 11px; font:600 12px Georgia,serif;
+  #zoomChips button, .camchip{appearance:none; border:none; border-radius:999px; padding:6px 11px; font:600 12px Georgia,serif;
                     background:rgba(255,255,255,.12); color:#F7EFDD; cursor:pointer;}
-  #zoomChips button.active{background:#C0392B; color:#fff;}
+  #zoomChips button.active, .camchip.active{background:#C0392B; color:#fff;}
+  #expWrap{display:none; align-items:center; gap:8px;}
+  #expWrap input{width:min(34vw,180px);}
   #lensSheet{position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:flex-start;
              gap:8px; background:rgba(8,6,4,.85); padding:7vh 20px 20px; overflow-y:auto; z-index:5;}
   #lensSheet button{appearance:none; border:none; border-radius:10px; padding:10px 16px; font:600 14px Georgia,serif;
@@ -126,7 +128,7 @@
   <div id="scriptPane"><div id="scroller"></div><div id="readLine"></div></div>
   <div id="clock"><span class="dot"></span><span id="clockTxt">0:00</span></div>
   <div id="mic"><div id="micFill"></div></div>
-  <div id="zoomBox"><span>Zoom</span><input type="range" id="zoom"><div id="zoomChips"></div></div>
+  <div id="zoomBox"><span id="zoomLbl">Zoom</span><input type="range" id="zoom"><div id="zoomChips"></div><button class="camchip" id="torchBtn" title="Camera light">Light</button><span id="expWrap"><span>Exp</span><input type="range" id="exp"></span></div>
   <div id="lensSheet"></div>
   <button id="showBtn" title="Show controls">⊙</button>
   <div id="count"></div>
@@ -275,11 +277,70 @@
     isFront = st.facingMode ? st.facingMode==="user" : /front|user/i.test(tr.label||"");
     camTransform();
   }
+  function vidTrack(){ return stream && stream.getVideoTracks()[0]; }
+  function vidCaps(){
+    var tr=vidTrack();
+    return (tr && tr.getCapabilities) ? (tr.getCapabilities()||{}) : {};
+  }
+  // Hold focus and white balance for the length of a take, so the picture does not
+  // hunt or shift colour mid-sentence. Exposure is deliberately left on auto.
+  function lockCam(){
+    var tr=vidTrack(); if(!tr || !tr.applyConstraints) return;
+    var caps=vidCaps(), st=tr.getSettings ? tr.getSettings() : {}, adv=[];
+    if(caps.focusMode && caps.focusMode.indexOf("manual")>-1){
+      var f={focusMode:"manual"};
+      if(caps.focusDistance && typeof st.focusDistance==="number") f.focusDistance=st.focusDistance;
+      adv.push(f);
+    }
+    if(caps.whiteBalanceMode && caps.whiteBalanceMode.indexOf("manual")>-1){
+      var w={whiteBalanceMode:"manual"};
+      if(caps.colorTemperature && typeof st.colorTemperature==="number") w.colorTemperature=st.colorTemperature;
+      adv.push(w);
+    }
+    if(adv.length) tr.applyConstraints({advanced:adv}).catch(function(){});
+  }
+  function unlockCam(){
+    var tr=vidTrack(); if(!tr || !tr.applyConstraints) return;
+    var caps=vidCaps(), adv=[];
+    if(caps.focusMode && caps.focusMode.indexOf("continuous")>-1) adv.push({focusMode:"continuous"});
+    if(caps.whiteBalanceMode && caps.whiteBalanceMode.indexOf("continuous")>-1) adv.push({whiteBalanceMode:"continuous"});
+    if(adv.length) tr.applyConstraints({advanced:adv}).catch(function(){});
+  }
+  var torchOn=false;
+  function setupTorch(){
+    var b=$("torchBtn"), tr=vidTrack(), caps=vidCaps();
+    torchOn=false; b.classList.remove("active");
+    if(!caps.torch){ b.style.display="none"; return false; }
+    b.style.display="";
+    b.onclick=function(){
+      torchOn=!torchOn;
+      tr.applyConstraints({advanced:[{torch:torchOn}]}).then(function(){
+        b.classList.toggle("active", torchOn);
+      }).catch(function(){
+        torchOn=false; b.classList.remove("active");
+      });
+    };
+    return true;
+  }
+  function setupExposure(){
+    var wrap=$("expWrap"), e=$("exp"), tr=vidTrack(), caps=vidCaps();
+    var c=caps.exposureCompensation;
+    if(!c || !(c.max>c.min)){ wrap.style.display="none"; return false; }
+    wrap.style.display="flex";
+    e.min=c.min; e.max=c.max; e.step=c.step||((c.max-c.min)/20);
+    var st=tr.getSettings ? tr.getSettings() : {};
+    e.value = (typeof st.exposureCompensation==="number") ? st.exposureCompensation : 0;
+    e.oninput=function(){
+      tr.applyConstraints({advanced:[{exposureCompensation:+e.value}]}).catch(function(){});
+    };
+    return true;
+  }
   function setupZoom(){
     var box=$("zoomBox"), z=$("zoom"), chips=$("zoomChips");
     var tr=stream && stream.getVideoTracks()[0];
     var caps=tr && tr.getCapabilities ? tr.getCapabilities() : {};
     chips.innerHTML="";
+    var extras = setupTorch() | setupExposure();
     if(caps.zoom && caps.zoom.max>caps.zoom.min){
       z.min=caps.zoom.min; z.max=caps.zoom.max; z.step=caps.zoom.step||0.1;
       z.value=caps.zoom.min;
@@ -301,9 +362,11 @@
       });
       z.oninput=function(){ tr.applyConstraints({advanced:[{zoom:+z.value}]}).catch(function(){}); markChip(); };
       markChip();
+      z.style.display=""; $("zoomLbl").style.display=""; chips.style.display="flex";
       box.style.display="flex";
     } else {
-      box.style.display="none";
+      z.style.display="none"; $("zoomLbl").style.display="none"; chips.style.display="none";
+      box.style.display = extras ? "flex" : "none";
     }
   }
   var audioTrack=null;
@@ -532,6 +595,7 @@
           alert("The microphone is not live, so this take would be silent. Tap the padlock next to the address and allow Microphone, then try again.");
           return;
         }
+        lockCam();
         var mime=pickMime();
         recExt = mime.indexOf("mp4")>-1 ? "mp4" : "webm";
         chunks=[];
@@ -555,6 +619,7 @@
     $("recBtn").classList.remove("on");
     stopClock();
     stopFiltered();
+    unlockCam();
     var blob=new Blob(chunks,{type: recExt==="mp4"?"video/mp4":"video/webm"});
     var url=URL.createObjectURL(blob);
     var d=new Date();
